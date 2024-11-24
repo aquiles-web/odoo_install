@@ -337,6 +337,42 @@ EOF"
 echo "Reiniciando Fail2Ban..."
 sudo systemctl restart fail2ban
 
+# Descargar y configurar las bases de datos GeoLite2
+echo "Configurando GeoLite2 (City y Country)..."
+
+# Crear el directorio destino si no existe
+sudo mkdir -p /usr/share/GeoIP
+
+# Descargar los archivos desde el repositorio público
+echo "Descargando GeoLite2 City..."
+curl -L -o GeoLite2-City.tar.gz https://github.com/GitSquared/node-geolite2-redist/raw/master/redist/GeoLite2-City.tar.gz
+
+echo "Descargando GeoLite2 Country..."
+curl -L -o GeoLite2-Country.tar.gz https://github.com/GitSquared/node-geolite2-redist/raw/master/redist/GeoLite2-Country.tar.gz
+
+# Extraer los archivos descargados
+echo "Descomprimiendo GeoLite2 City..."
+tar -xvzf GeoLite2-City.tar.gz
+
+echo "Descomprimiendo GeoLite2 Country..."
+tar -xvzf GeoLite2-Country.tar.gz
+
+# Mover los archivos .mmdb al directorio de GeoIP
+echo "Moviendo archivos .mmdb a /usr/share/GeoIP/..."
+sudo find ./ -type f -name "GeoLite2-*.mmdb" -exec mv {} /usr/share/GeoIP/ \;
+
+# Cambiar permisos para asegurar que los archivos son accesibles
+echo "Ajustando permisos de /usr/share/GeoIP/..."
+sudo chmod -R 755 /usr/share/GeoIP/
+
+# Limpiar archivos descargados y carpetas extraídas
+echo "Limpiando archivos temporales..."
+rm -f GeoLite2-City.tar.gz GeoLite2-Country.tar.gz
+sudo find ./ -type d -name "GeoLite2-*" -exec rm -rf {} +
+
+# Confirmación
+echo "GeoLite2 City y Country configurados correctamente en /usr/share/GeoIP/"
+
 # Crear archivo de configuración de Odoo
 echo "Creando archivo de configuración para Odoo..."
 sudo mkdir -p /etc/$OE_USER
