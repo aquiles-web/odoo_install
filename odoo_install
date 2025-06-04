@@ -67,7 +67,7 @@ sudo apt upgrade -y
 
 # Instalar dependencias
 echo "Instalando dependencias..."
-sudo apt install -y git python3-cffi build-essential wget python3-dev python3-venv python3-wheel libxslt-dev libzip-dev libldap2-dev libsasl2-dev python3-setuptools node-less libpng-dev libjpeg-dev gdebi libssl-dev libffi-dev libblas-dev libatlas-base-dev xfonts-75dpi fontconfig xfonts-base libxrender1 libfontconfig1 libx11-dev libjpeg62 libxtst6 libjpeg-turbo8-dev libx11-doc libpq-dev libxcb-doc ttf-mscorefonts-installer
+sudo apt install -y git python3-cffi build-essential wget curl python3-dev python3-venv python3-wheel libxslt-dev libzip-dev libldap2-dev libsasl2-dev python3-setuptools node-less libpng-dev libjpeg-dev gdebi libssl-dev libffi-dev libblas-dev libatlas-base-dev xfonts-75dpi fontconfig xfonts-base libxrender1 libfontconfig1 libx11-dev libjpeg62 libxtst6 libjpeg-turbo8-dev libx11-doc libpq-dev libxcb-doc ttf-mscorefonts-installer
 
 # Instalar Node.js y paquetes LESS/CSS
 echo "Instalando NPM Node.js y paquetes LESS/CSS..."
