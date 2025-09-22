@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Script de instalación Odoo 19 - Versión actualizada
+# Script de instalación Odoo 19 - Versión corregida
 # Compatible con Ubuntu 20.04+ / Debian 11+
-# Actualizado para requisitos Odoo 19.0
+# Actualizado con correcciones de configuración
 
 # Detener script al primer error
 set -e
@@ -19,13 +19,13 @@ OE_VERSION="19.0"
 OE_USER="odoo"
 OE_HOME="/opt/$OE_USER"
 OE_HOME_EXT="$OE_HOME/$OE_VERSION"
-OE_CONFIG="${OE_USER}${OE_VERSION%.*}"  # Combina usuario y versión sin ".0"
+OE_CONFIG="${OE_USER}${OE_VERSION%.*}"  # odoo19
 OE_PORT="8069"
 LONGPOLLING_PORT="8072"
 
-echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}    INSTALADOR ODOO 19.0 - VERSIÓN ACTUALIZADA${NC}"
-echo -e "${BLUE}================================================${NC}"
+echo -e "${BLUE}================================================================${NC}"
+echo -e "${BLUE}    INSTALADOR ODOO 19.0 - VERSIÓN CORREGIDA${NC}"
+echo -e "${BLUE}================================================================${NC}"
 echo ""
 
 # Verificar que se ejecute como root o con sudo
@@ -193,11 +193,17 @@ else
     fi
 fi
 
-# Crear carpetas necesarias
+# Crear carpetas necesarias (CORREGIDO)
 echo -e "${YELLOW}Creando directorios para Odoo 19...${NC}"
-mkdir -p $OE_HOME_EXT/enterprise $OE_HOME_EXT/addons $OE_HOME_EXT/custom/addons
+mkdir -p $OE_HOME_EXT/addons
+mkdir -p $OE_HOME_EXT/custom/addons
 mkdir -p $OE_HOME/.local/share/Odoo
 mkdir -p /var/log/$OE_USER
+
+# Si no hay enterprise, crear directorio vacío para evitar warnings
+if [[ ! -d "$OE_HOME_EXT/enterprise" ]]; then
+    mkdir -p $OE_HOME_EXT/enterprise/addons
+fi
 
 # Establecer permisos
 chown -R $OE_USER:$OE_USER $OE_HOME/
@@ -318,20 +324,21 @@ else
     exit 1
 fi
 
-# Configurar archivo de configuración Odoo 19
-echo -e "${YELLOW}Creando archivo de configuración Odoo 19...${NC}"
+# Crear archivo de configuración Odoo 19 CORREGIDO
+echo -e "${YELLOW}Creando archivo de configuración Odoo 19 corregido...${NC}"
 mkdir -p /etc/$OE_USER
 
+# Configuración corregida para Odoo 19
 tee /etc/$OE_USER/$OE_CONFIG.conf > /dev/null <<EOF
 [options]
-addons_path = $OE_HOME_EXT/enterprise/addons,$OE_HOME_EXT/addons,$OE_HOME_EXT/custom/addons
+addons_path = $OE_HOME_EXT/addons,$OE_HOME_EXT/custom/addons$(if [[ -d "$OE_HOME_EXT/enterprise" ]]; then echo ",$OE_HOME_EXT/enterprise/addons"; fi)
 admin_passwd = admin
-db_host = False
-db_port = False
+db_host = 
+db_port = 
 db_user = $OE_USER
 db_password = $OE_DB_PASSWORD
-xmlrpc_port = $OE_PORT
-longpolling_port = $LONGPOLLING_PORT
+http_port = $OE_PORT
+gevent_port = $LONGPOLLING_PORT
 proxy_mode = True
 logfile = /var/log/$OE_USER/$OE_USER.log
 
@@ -348,13 +355,14 @@ data_dir = $OE_HOME/.local/share/Odoo
 
 # Seguridad mejorada
 list_db = False
-db_name = False
-without_demo = all
+without_demo = True
 
 # Logs mejorados
 log_level = info
 log_handler = :INFO
-log_db = False
+
+# Interface HTTP (nuevo en Odoo 19)
+http_interface = 0.0.0.0
 
 # Performance
 db_maxconn = 64
@@ -363,8 +371,8 @@ EOF
 chown $OE_USER:$OE_USER /etc/$OE_USER/$OE_CONFIG.conf
 chmod 640 /etc/$OE_USER/$OE_CONFIG.conf
 
-# Crear servicio systemd optimizado para Odoo 19
-echo -e "${YELLOW}Creando servicio systemd para Odoo 19...${NC}"
+# Crear servicio systemd optimizado para Odoo 19 (TIMEOUT CORREGIDO)
+echo -e "${YELLOW}Creando servicio systemd para Odoo 19 con timeout corregido...${NC}"
 tee /etc/systemd/system/$OE_CONFIG.service > /dev/null <<EOF
 [Unit]
 Description=Odoo $OE_VERSION
@@ -373,7 +381,7 @@ Requires=postgresql.service
 After=network.target postgresql.service
 
 [Service]
-Type=notify
+Type=simple
 User=$OE_USER
 Group=$OE_USER
 ExecStart=$OE_HOME_EXT/venv/bin/python3 $OE_HOME_EXT/odoo-bin -c /etc/$OE_USER/$OE_CONFIG.conf
@@ -384,7 +392,8 @@ StandardError=journal
 SyslogIdentifier=$OE_CONFIG
 Restart=on-failure
 RestartSec=10
-RestartPreventExitStatus=0
+TimeoutStartSec=300
+TimeoutStopSec=60
 
 # Límites de recursos para Odoo 19
 LimitNOFILE=65535
@@ -399,21 +408,54 @@ WorkingDirectory=$OE_HOME_EXT
 WantedBy=multi-user.target
 EOF
 
-# Iniciar servicios
+# Recargar systemd
 systemctl daemon-reload
+
+# Probar arranque manual antes de iniciar el servicio
+echo -e "${YELLOW}Probando arranque manual de Odoo 19...${NC}"
+echo "Esto puede tardar 1-2 minutos..."
+
+if timeout 120 sudo -u $OE_USER $OE_HOME_EXT/venv/bin/python3 $OE_HOME_EXT/odoo-bin \
+    -c /etc/$OE_USER/$OE_CONFIG.conf \
+    --stop-after-init \
+    --log-level=error > /tmp/odoo_test_boot.log 2>&1; then
+    echo -e "${GREEN}✓ Test de arranque manual exitoso${NC}"
+else
+    echo -e "${YELLOW}⚠ Advertencias en test de arranque. Logs:${NC}"
+    tail -20 /tmp/odoo_test_boot.log
+    echo ""
+    read -p "¿Continuar con el servicio systemd? (s/n): " CONTINUE_SERVICE
+    if [[ ! "$CONTINUE_SERVICE" =~ ^[Ss]$ ]]; then
+        echo "Instalación detenida para revisión"
+        exit 1
+    fi
+fi
+
+# Iniciar servicios
+echo -e "${YELLOW}Iniciando servicio Odoo 19...${NC}"
 systemctl enable $OE_CONFIG.service
 systemctl start $OE_CONFIG.service
 
 # Esperar que Odoo inicie
-echo -e "${YELLOW}Esperando que Odoo 19 inicie...${NC}"
-sleep 10
+echo -e "${YELLOW}Esperando que Odoo 19 inicie completamente...${NC}"
+sleep 15
 
 # Verificar que Odoo esté ejecutándose
 if systemctl is-active --quiet $OE_CONFIG.service; then
-    echo -e "${GREEN}Odoo 19 iniciado correctamente${NC}"
+    echo -e "${GREEN}✓ Odoo 19 iniciado correctamente${NC}"
+    
+    # Test de conectividad
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:$OE_PORT | grep -q "200\|302\|303"; then
+        echo -e "${GREEN}✓ Odoo responde correctamente en puerto $OE_PORT${NC}"
+    else
+        echo -e "${YELLOW}⚠ Odoo puede estar iniciando aún. Verificar manualmente en unos minutos.${NC}"
+    fi
 else
-    echo -e "${RED}Error: Odoo no pudo iniciarse. Verificando logs...${NC}"
+    echo -e "${RED}✗ Error: Odoo no pudo iniciarse. Verificando logs...${NC}"
     journalctl -u $OE_CONFIG.service --no-pager -n 20
+    echo ""
+    echo -e "${YELLOW}Para debugging manual ejecuta:${NC}"
+    echo "sudo -u $OE_USER $OE_HOME_EXT/venv/bin/python3 $OE_HOME_EXT/odoo-bin -c /etc/$OE_USER/$OE_CONFIG.conf"
     exit 1
 fi
 
@@ -522,7 +564,7 @@ server {
     # Servir archivos estáticos directamente
     location ~* ^/[^/]+/static/.*\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)\$ {
         root $OE_HOME_EXT;
-        try_files /enterprise/addons\$uri /addons\$uri /custom/addons\$uri =404;
+        try_files $(if [[ -d "$OE_HOME_EXT/enterprise" ]]; then echo "/enterprise/addons\$uri "; fi)/addons\$uri /custom/addons\$uri =404;
         expires 30d;
         add_header Cache-Control "public, immutable";
         access_log off;
@@ -761,8 +803,10 @@ case "$1" in
         ;;
     addons)
         echo "Carpetas de addons:"
-        echo "Enterprise: $OE_HOME_EXT/enterprise/addons"
         echo "Community: $OE_HOME_EXT/addons"
+        if [[ -d "$OE_HOME_EXT/enterprise" ]]; then
+            echo "Enterprise: $OE_HOME_EXT/enterprise/addons"
+        fi
         echo "Custom: $OE_HOME_EXT/custom/addons"
         ;;
     info)
@@ -772,8 +816,17 @@ case "$1" in
         echo "Configuración: /etc/$OE_USER/$OE_CONFIG.conf"
         echo "Logs: /var/log/$OE_USER/$OE_USER.log"
         echo "Servicio: $OE_CONFIG.service"
-        echo "Puerto: $(grep xmlrpc_port /etc/$OE_USER/$OE_CONFIG.conf | cut -d' ' -f3)"
+        echo "Puerto: $(grep http_port /etc/$OE_USER/$OE_CONFIG.conf | cut -d'=' -f2 | tr -d ' ')"
         echo "Estado: $(systemctl is-active $OE_CONFIG.service)"
+        ;;
+    debug)
+        echo "Ejecutando Odoo 19 en modo debug..."
+        echo "Presiona Ctrl+C para salir"
+        sudo -u $OE_USER $OE_HOME_EXT/venv/bin/python3 $OE_HOME_EXT/odoo-bin -c /etc/$OE_USER/$OE_CONFIG.conf --log-level=debug
+        ;;
+    test-boot)
+        echo "Probando arranque de Odoo 19..."
+        sudo -u $OE_USER $OE_HOME_EXT/venv/bin/python3 $OE_HOME_EXT/odoo-bin -c /etc/$OE_USER/$OE_CONFIG.conf --stop-after-init --log-level=info
         ;;
     *)
         echo "Script de administración Odoo 19"
@@ -792,6 +845,8 @@ case "$1" in
         echo "  config      - Editar configuración"
         echo "  addons      - Mostrar rutas de addons"
         echo "  info        - Información del sistema"
+        echo "  debug       - Ejecutar en modo debug"
+        echo "  test-boot   - Probar arranque"
         ;;
 esac
 EOF
@@ -918,6 +973,68 @@ EOF
     echo -e "${GREEN}✓ Backup automático configurado (diario a las 2:00 AM)${NC}"
 fi
 
+# Crear script de resolución de problemas
+cat > /usr/local/bin/odoo-troubleshoot << 'EOF'
+#!/bin/bash
+
+echo "=== RESOLUCIÓN DE PROBLEMAS ODOO 19 ==="
+echo ""
+
+echo "1. Verificando estado del servicio..."
+systemctl status odoo19.service --no-pager -l
+
+echo ""
+echo "2. Últimos logs (últimas 20 líneas)..."
+journalctl -u odoo19.service -n 20 --no-pager
+
+echo ""
+echo "3. Verificando conectividad de red..."
+if curl -s -I http://localhost:8069 | head -1; then
+    echo "   ✓ Puerto 8069 responde"
+else
+    echo "   ✗ Puerto 8069 no responde"
+fi
+
+echo ""
+echo "4. Verificando permisos de archivos..."
+if [[ -r "/etc/odoo/odoo19.conf" ]]; then
+    echo "   ✓ Configuración legible"
+else
+    echo "   ✗ Problema con permisos de configuración"
+fi
+
+if [[ -w "/var/log/odoo/" ]]; then
+    echo "   ✓ Directorio logs escribible"
+else
+    echo "   ✗ Problema con permisos de logs"
+fi
+
+echo ""
+echo "5. Verificando PostgreSQL..."
+if systemctl is-active --quiet postgresql; then
+    if sudo -u postgres psql -c "\l" > /dev/null 2>&1; then
+        echo "   ✓ PostgreSQL funcional"
+    else
+        echo "   ✗ PostgreSQL con problemas"
+    fi
+else
+    echo "   ✗ PostgreSQL no está activo"
+fi
+
+echo ""
+echo "6. Procesos Odoo activos..."
+ps aux | grep -E "(odoo|python3.*odoo-bin)" | grep -v grep
+
+echo ""
+echo "=== COMANDOS ÚTILES PARA DEBUGGING ==="
+echo "• Arranque manual: sudo -u odoo /opt/odoo/19.0/venv/bin/python3 /opt/odoo/19.0/odoo-bin -c /etc/odoo/odoo19.conf"
+echo "• Logs en vivo: journalctl -u odoo19.service -f"
+echo "• Reiniciar: systemctl restart odoo19.service"
+echo "• Verificar config: odoo-admin config"
+EOF
+
+chmod +x /usr/local/bin/odoo-troubleshoot
+
 # Resumen final de la instalación
 echo ""
 echo -e "${BLUE}================================================================${NC}"
@@ -952,8 +1069,10 @@ echo -e "${GREEN}COMANDOS ÚTILES:${NC}"
 echo -e "${GREEN}----------------${NC}"
 echo "• Administrar Odoo: odoo-admin [start|stop|restart|status|logs]"
 echo "• Monitorear sistema: odoo-monitor"
+echo "• Resolución problemas: odoo-troubleshoot"
+echo "• Debug manual: odoo-admin debug"
 echo "• Ver logs: journalctl -u $OE_CONFIG.service -f"
-echo "• Editar configuración: nano /etc/$OE_USER/$OE_CONFIG.conf"
+echo "• Editar configuración: odoo-admin config"
 echo ""
 echo -e "${GREEN}ACCESO WEB:${NC}"
 echo -e "${GREEN}-----------${NC}"
@@ -975,7 +1094,7 @@ echo "• Personalizados: $OE_HOME_EXT/custom/addons"
 echo ""
 echo -e "${YELLOW}PRÓXIMOS PASOS RECOMENDADOS:${NC}"
 echo -e "${YELLOW}----------------------------${NC}"
-echo "1. Acceder a https://$WEBSITE_NAME y crear la primera base de datos"
+echo "1. Acceder a http://$WEBSITE_NAME y crear la primera base de datos"
 echo "2. Cambiar la contraseña del usuario admin"
 echo "3. Instalar módulos necesarios para tu proyecto"
 echo "4. Configurar copias de seguridad adicionales si es necesario"
@@ -988,6 +1107,7 @@ if [[ "$services_ok" == true ]]; then
 else
     echo -e "${YELLOW}⚠️  INSTALACIÓN COMPLETADA CON ADVERTENCIAS${NC}"
     echo -e "${YELLOW}Revisar servicios inactivos antes de usar${NC}"
+    echo -e "${YELLOW}Ejecutar: odoo-troubleshoot${NC}"
 fi
 
 echo ""
@@ -998,5 +1118,15 @@ echo ""
 
 # Log de instalación
 echo "$(date): Instalación de Odoo 19 completada en $HOSTNAME por $(whoami)" >> /var/log/odoo-install.log
+
+# Mostrar información adicional si hubo problemas
+if [[ "$services_ok" != true ]]; then
+    echo -e "${YELLOW}🔧 Si encuentras problemas:${NC}"
+    echo "1. Ejecutar: odoo-troubleshoot"
+    echo "2. Verificar logs: odoo-admin logs"
+    echo "3. Probar arranque: odoo-admin test-boot"
+    echo "4. Debug manual: odoo-admin debug"
+    echo ""
+fi
 
 exit 0
