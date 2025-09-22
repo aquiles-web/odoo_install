@@ -239,6 +239,7 @@ su $OE_USER -c "
         # Instalar dependencias específicas para Odoo 19
         echo 'Instalando dependencias Python para Odoo 19...'
         pip install psycopg2-binary
+        pip install phonenumbers
         pip install pycryptodome
         pip install babel
         pip install python-ldap
